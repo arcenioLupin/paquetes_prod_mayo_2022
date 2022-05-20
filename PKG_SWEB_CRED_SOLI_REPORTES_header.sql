@@ -1,4 +1,4 @@
-create or replace PACKAGE       venta.PKG_SWEB_CRED_SOLI_REPORTES AS
+create or replace PACKAGE       ventas.PKG_SWEB_CRED_SOLI_REPORTES AS
 
 /*-----------------------------------------------------------------------------
     Nombre : SP_LIST_CRED_SOLI_VC_COD_OPERS
@@ -223,6 +223,114 @@ FUNCTION fn_ratio_cobertura(
     p_ret_esta      OUT NUMBER,
     p_ret_mens      OUT VARCHAR2
   );
+
+/*------------------------------------------------------------------------------
+    Nombre : sp_search_cliente_traza
+    Proposito : Adjunta los datos de los Clientes para el reporte de trazabilidad
+    Referencias : 
+    Parametros :
+    Log de Cambios
+    Fecha        Autor          Descripcion
+    05/04/2022   Arcenio Vilca  Creacion
+    07/10/2022   Alan Salas     Modificacion        
+  ----------------------------------------------------------------------------*/
+
+  PROCEDURE sp_search_cliente_traza (
+      p_cod_clie       IN vve_cred_soli.cod_clie%TYPE,
+      p_tipo_docu      IN gen_persona.cod_tipo_docu_iden%TYPE,
+      p_num_docu       IN gen_persona.num_docu_iden%TYPE,
+      p_ratio          IN VARCHAR2,
+      p_cia            IN vve_cred_soli.cod_empr%TYPE,
+      p_tipo_gara      IN VARCHAR2,
+      p_num_ope        IN arlcop.cod_oper%TYPE,  
+      p_cod_soli_cred  IN vve_cred_soli_gest_banc.COD_SOLI_CRED%TYPE,
+      p_situ_ope       IN VARCHAR2,
+      p_fec_mig_ini    IN  VARCHAR2,
+      p_fec_mig_fin    IN  VARCHAR2,
+      p_cod_usua_sid   IN sistemas.usuarios.co_usuario%TYPE,
+      p_ret_cursor     OUT SYS_REFCURSOR,
+      p_ret_esta       OUT NUMBER,
+      p_ret_mens       OUT VARCHAR2
+  );
+  
+/*-----------------------------------------------------------------------------
+    Nombre : sp_search_soli_traza
+    Proposito : Reporte de Trazabilidad de Creditos
+    Referencias : 
+    Parametros :
+    Log de Cambios
+    Fecha        Autor          Descripcion
+    05/04/2022   Arcenio Vilca  Creacion
+    07/10/2022   Alan Salas     Modificacion        
+  ----------------------------------------------------------------------------*/
+
+  PROCEDURE sp_search_soli_traza (
+      p_cod_clie       IN vve_cred_soli.cod_clie%TYPE,
+      p_tipo_docu      IN gen_persona.cod_tipo_docu_iden%TYPE,
+      p_num_docu       IN gen_persona.num_docu_iden%TYPE,
+      p_ratio          IN VARCHAR2,
+      p_cia            IN vve_cred_soli.cod_empr%TYPE,
+      p_tipo_gara      IN VARCHAR2,
+      p_num_ope        IN arlcop.cod_oper%TYPE,  
+      p_cod_soli_cred  IN vve_cred_soli_gest_banc.COD_SOLI_CRED%TYPE,
+      p_situ_ope       IN VARCHAR2,
+      p_fec_mig_ini    IN  VARCHAR2,
+      p_fec_mig_fin    IN  VARCHAR2,
+      p_cod_usua_sid   IN sistemas.usuarios.co_usuario%TYPE,
+      p_ret_cursor     OUT SYS_REFCURSOR,
+      p_ret_esta       OUT NUMBER,
+      p_ret_mens       OUT VARCHAR2
+  );
+  
+  PROCEDURE sp_inse_clie_movi_temp (
+        p_cod_clie            IN                    lxc.lxc_clie_movi_temp.no_cliente%TYPE,
+        p_cia                 IN                    lxc.lxc_clie_movi_temp.no_cia%TYPE,
+        p_cod_oper            IN                    lxc.lxc_clie_movi_temp.cod_oper%TYPE,
+        p_modal_cred          IN                    lxc.lxc_clie_movi_temp.modal_cred%TYPE,
+        p_cod_moneda          IN                    lxc.lxc_clie_movi_temp.moneda%TYPE,
+        p_val_mon_fin         IN                    lxc.lxc_clie_movi_temp.total_financiar%TYPE,
+        p_num_cuotas          IN                    lxc.lxc_clie_movi_temp.no_cuotas%TYPE,
+        p_tea_sigv            IN                    lxc.lxc_clie_movi_temp.tea_sigv%TYPE,
+        p_capital             IN                    lxc.lxc_clie_movi_temp.capital%TYPE,
+        p_fec_ven_ult_let     IN                    VARCHAR2,
+        p_estado              IN                    lxc.lxc_clie_movi_temp.estado%TYPE,
+        p_fecha               IN                    VARCHAR2,
+        p_mon_gara_tot        IN                    lxc.lxc_clie_movi_temp.mon_gara_tot%TYPE,
+        p_porc_ratio_gar      IN                    lxc.lxc_clie_movi_temp.por_ratio_gar%TYPE,
+        p_int_oper            IN                    lxc.lxc_clie_movi_temp.interes_oper%TYPE,
+        p_tot_igv             IN                    lxc.lxc_clie_movi_temp.total_igv%TYPE,
+        p_tot_isc             IN                    lxc.lxc_clie_movi_temp.total_isc%TYPE,
+        p_tipo_cambio         IN                    lxc.lxc_clie_movi_temp.tipo_cambio%TYPE,
+        p_plazo               IN                    lxc.lxc_clie_movi_temp.plazo%TYPE,
+        p_dia_venc_max        IN                    lxc.lxc_clie_movi_temp.dia_venc_max%TYPE,
+        p_dia_venc_pro        IN                    lxc.lxc_clie_movi_temp.dia_venc_pro%TYPE,
+        p_cod_usua_sid        IN                    sistemas.usuarios.co_usuario%TYPE,
+        p_cod_usua_web        IN                    sistemas.sis_mae_usuario.cod_id_usuario%TYPE,
+        p_ret_esta            OUT                   NUMBER,
+        p_ret_mens            OUT                   VARCHAR2
+    );
+  
+  
+
+  PROCEDURE sp_calcula_clie_sap (
+      p_cia              IN    vve_cred_soli.cod_empr%TYPE,
+      p_num_ope          IN    arlcop.cod_oper%TYPE,  
+      p_saldo            IN    arlcml.saldo%TYPE, 
+      p_nro_sec          OUT   arlcml.nro_sec%TYPE,
+      p_monto_inicial    OUT   arlcml.monto_inicial%TYPE,
+      p_dias_prom        OUT   NUMBER,  
+      p_dias_max         OUT   NUMBER,  
+      p_ret_esta         OUT   NUMBER,
+      p_mon_gara_tot     OUT   lxc.lxc_clie_movi_temp.mon_gara_tot%TYPE,
+      p_porc_ratio_ga    OUT   lxc.lxc_clie_movi_temp.por_ratio_gar%TYPE,           
+      p_ret_mens         OUT   VARCHAR2
+      );  
+
+  PROCEDURE sp_del_clie_movi_temp (
+        p_cod_clie            IN                    lxc.lxc_clie_movi_temp.no_cliente%TYPE,
+        p_ret_esta            OUT                   NUMBER,
+        p_ret_mens            OUT                   VARCHAR2
+    );
 
   
 END PKG_SWEB_CRED_SOLI_REPORTES;

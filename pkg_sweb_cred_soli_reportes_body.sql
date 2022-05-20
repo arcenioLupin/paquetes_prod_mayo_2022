@@ -1,4 +1,4 @@
-create or replace PACKAGE BODY       venta.pkg_sweb_cred_soli_reportes AS
+create or replace PACKAGE BODY       ventas.pkg_sweb_cred_soli_reportes AS
 
     PROCEDURE sp_list_cred_soli_vc_cod_opers (
         p_cod_clie       IN vve_cred_soli.cod_clie%TYPE,
@@ -1490,5 +1490,542 @@ create or replace PACKAGE BODY       venta.pkg_sweb_cred_soli_reportes AS
     END sp_list_cred_soli_vo;
 
 
+    PROCEDURE sp_search_cliente_traza (
+        p_cod_clie       IN vve_cred_soli.cod_clie%TYPE,
+        p_tipo_docu      IN gen_persona.cod_tipo_docu_iden%TYPE,
+        p_num_docu       IN gen_persona.num_docu_iden%TYPE,
+        p_ratio          IN VARCHAR2,
+        p_cia            IN vve_cred_soli.cod_empr%TYPE,
+        p_tipo_gara      IN VARCHAR2,
+        p_num_ope        IN arlcop.cod_oper%TYPE,  
+        p_cod_soli_cred  IN vve_cred_soli_gest_banc.COD_SOLI_CRED%TYPE,
+        p_situ_ope       IN VARCHAR2,
+        p_fec_mig_ini    IN  VARCHAR2,
+        p_fec_mig_fin    IN  VARCHAR2,
+        p_cod_usua_sid   IN sistemas.usuarios.co_usuario%TYPE,
+        p_ret_cursor     OUT SYS_REFCURSOR,
+        p_ret_esta       OUT NUMBER,
+        p_ret_mens       OUT VARCHAR2
+    ) AS
+        ve_error            EXCEPTION;
+        
+        BEGIN
+        
+          OPEN p_ret_cursor FOR
+            SELECT  DISTINCT
+              ( SELECT  LTRIM(c1.cod_clie_sap,'0')  FROM cxc_mae_clie c1 WHERE c1.cod_clie = a.no_cliente ) as cod_clie_sap,
+              a.no_cliente as cod_clie
+            FROM arlcop a
+            INNER JOIN gen_persona gp  ON  a.no_cliente = gp.cod_perso
+            LEFT JOIN vve_cred_soli s  ON  a.no_cia = s.cod_empr   AND a.cod_oper = s.cod_oper_rel 
+            LEFT JOIN lxc_oper_ratio r ON  r.no_cia = a.no_cia  AND r.cod_oper = a.cod_oper AND r.nivel = 1
+            LEFT JOIN vve_cred_maes_gara u ON EXISTS ( SELECT 1 FROM lxc_oper_soli_gara g1 WHERE g1.no_cia = a.no_cia AND  ( g1.cod_oper = a.cod_oper or g1.cod_soli_cred = s.cod_soli_cred ) AND u.cod_garantia = g1.cod_gara )
+            WHERE  a.estado = 'A'
+              AND  a.fecha_cre_reg > TO_DATE('31122018','DDMMYYYY') 
+              AND ( (p_tipo_docu IS NULL AND p_num_docu IS NULL )
+                    OR DECODE(p_tipo_docu,'002',gp.num_ruc,'001',gp.num_docu_iden) = p_num_docu )
+              AND ( p_cod_clie IS NULL
+                    OR a.No_Cliente = p_cod_clie )         
+              AND ( p_num_ope IS NULL
+                    OR a.cod_oper = p_num_ope )  
+              AND ( p_cod_soli_cred IS NULL
+                    OR s.cod_soli_cred = p_cod_soli_cred )  
+              AND ( nvl(p_ratio,6) = 6 AND (r.val_ratio IS NULL) 
+              OR  ( p_ratio = 1 AND (r.val_ratio < 1)  )      
+              OR  ( p_ratio = 2 AND (r.val_ratio >= 1   AND r.val_ratio < 1.2 ) )
+              OR  ( p_ratio = 3 AND (r.val_ratio >= 1.2 AND r.val_ratio < 1.3 ) )
+              OR  ( p_ratio = 4 AND (r.val_ratio >= 1.3 AND r.val_ratio < 1.5 ) ) 
+              OR  ( p_ratio = 5 AND (r.val_ratio >= 1.5 )  ) )
+              AND ( p_cia IS NULL
+                    OR a.no_cia = p_cia )     
+              AND ( p_tipo_gara IS NULL
+                    OR u.ind_tipo_garantia = p_tipo_gara ) 
+              AND ( p_fec_mig_ini IS NULL 
+                    OR ( SELECT TRUNC( MAX(i.fec_usua_cre ) ) FROM  lxc_aud_imp_letras i WHERE  i.no_cia = a.no_cia AND i.cod_oper = a.cod_oper AND i.estado = a.estado AND substr(i.tipo_oper,1,11) = 'F-MIGRACION' ) >= p_fec_mig_ini )
+              AND ( p_fec_mig_fin IS NULL 
+                    OR ( SELECT TRUNC( MAX(i.fec_usua_cre ) ) FROM  lxc_aud_imp_letras i WHERE  i.no_cia = a.no_cia AND i.cod_oper = a.cod_oper AND i.estado = a.estado AND substr(i.tipo_oper,1,11) = 'F-MIGRACION' ) <= p_fec_mig_fin );
+                       
+                       
+        p_ret_esta := 1;
+        p_ret_mens := 'La consulta se realizó de manera exitosa';
+    EXCEPTION
+        WHEN ve_error THEN
+            p_ret_esta := 0;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR',
+                                                'sp_search_cliente_traza',
+                                                p_cod_usua_sid,
+                                                'Error en la consulta',
+                                                p_ret_mens,
+                                                NULL);
+        WHEN OTHERS THEN
+            p_ret_esta := -1;
+            p_ret_mens := 'SP_SEARCH_CLIENTE_TRAZA:' || sqlerrm;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR',
+                                                'sp_search_cliente_traza',
+                                                p_cod_usua_sid,
+                                                'Error en la consulta',
+                                                p_ret_mens,
+                                                NULL);
+    END sp_search_cliente_traza;
+
+
+    PROCEDURE sp_search_soli_traza (
+        p_cod_clie       IN vve_cred_soli.cod_clie%TYPE,
+        p_tipo_docu      IN gen_persona.cod_tipo_docu_iden%TYPE,
+        p_num_docu       IN gen_persona.num_docu_iden%TYPE,
+        p_ratio          IN VARCHAR2,
+        p_cia            IN vve_cred_soli.cod_empr%TYPE,
+        p_tipo_gara      IN VARCHAR2,
+        p_num_ope        IN arlcop.cod_oper%TYPE,  
+        p_cod_soli_cred  IN vve_cred_soli_gest_banc.COD_SOLI_CRED%TYPE,
+        p_situ_ope       IN VARCHAR2,
+        p_fec_mig_ini    IN  VARCHAR2,
+        p_fec_mig_fin    IN  VARCHAR2,
+        p_cod_usua_sid   IN sistemas.usuarios.co_usuario%TYPE,
+        p_ret_cursor     OUT SYS_REFCURSOR,
+        p_ret_esta       OUT NUMBER,
+        p_ret_mens       OUT VARCHAR2
+    ) AS
+        ve_error            EXCEPTION;
+        
+        BEGIN
+        
+           OPEN p_ret_cursor FOR
+                 /*   SELECT 
+                    'ET. SAN MIGUEL DE LOS ANGELES S.A' as razon_social,
+                    '10105584998' as nro_documento,
+                    '24/03/2022' as fecha_ope,
+                    'Vigente' as situ_ope,
+                    '10463394-7' as nro_ope,
+                    '10057477-20' as nro_rel_ope,
+                    '00000000000000000224' as cod_soli_cred,
+                    'Camión' as gara_mob_ajena,
+                    50000 as val_gara_mob_ajena,
+                    'Bus Interprovincial' as gara_mob_prop,
+                    150000 as val_gara_mob_prop,
+                    'Terreno 400 m2' as gara_hipo,
+                    400000 as valor_gara_hipo,
+                    1.3 as ratio_ini,
+                    'Recon. de Deuda' as desc_tipo_cred,
+                    'TC01' as cod_tipo_cred,
+                    12.71 as tea_sin_igv,
+                    150000 as val_vta,
+                    15000  as total_fn,
+                    24 as plazo,
+                    12 as cuotas_pagadas,
+                    3 as cuotas_vencidas,
+                    35000 as saldo_capital,
+                    75000 as deuda_por_vencer,
+                    10000 as deuda_vencida,
+                    25000 as val_gara_actual,
+                    1.4 as ratio_actual,
+                    70 as mora_max,
+                    15 as mora_prom
+                  FROM DUAL  */
+            SELECT 
+              gp.nom_perso           AS  razon_social,
+              decode(gp.cod_tipo_perso,'N', gp.num_docu_iden,'J',gp.num_ruc)     AS  nro_documento,
+              to_char(a.fecha, 'dd/mm/rrrr') as fecha_ope,
+              t.estado as situ_ope,
+              s.cod_area_vta AS cod_area_vta, -- CAMPO1 VARCHAR2(20)
+              a.cod_oper as nro_ope,
+              pkg_soli_ope_traza.fn_obt_ope_pri(a.no_cia, a.cod_oper ) AS nro_rel_ope,
+              pkg_soli_ope_traza.fun_obt_cod_ref_op(a.no_cia, a.cod_oper ) AS nro_ope_prima,   --CAMPO2  arlcop.cod_oper%TYPE
+              s.cod_soli_cred AS cod_soli_cred,
+              pkg_soli_ope_traza.fu_obt_placa_oper(a.no_cia,a.cod_oper,'A')  as gara_mob_ajena, --placa
+              pkg_soli_ope_traza.fu_obt_vin_oper(a.no_cia,a.cod_oper,'A')   AS  gara_mob_ajena_vin,   --CAMPO 3 VARCHAR2(100)
+              r.val_gm_ajeno as  val_gara_mob_ajena,
+              pkg_soli_ope_traza.fu_obt_placa_oper(a.no_cia,a.cod_oper,'P') AS gara_mob_prop,
+              pkg_soli_ope_traza.fu_obt_vin_oper(a.no_cia,a.cod_oper,'P')  AS  gara_mob_prop_vin,  --CAMPO 4 VARCHAR2(100)
+              r.val_gm_propio as val_gara_mob_prop,
+              NULL AS gara_hipo,
+              r.val_g_hipotecaria as valor_gara_hipo,
+              r.val_ratio as ratio_ini,
+              initcap(pkg_soli_ope_traza.fun_obt_tipo_op(a.no_cia,a.cod_oper))  as desc_tipo_cred,
+              s.tip_soli_cred    as cod_tipo_cred,     
+              pkg_sweb_cred_soli.fn_tasa_sin_igv(a.tea) as tea_sin_igv,
+             (
+              SELECT SUM(a1.val_vta_tot_fin) 
+              FROM vve_cred_soli_prof a1
+              WHERE a1.cod_soli_cred = s.cod_soli_cred
+                AND a1.ind_inactivo = 'N' ) as val_vta,
+             (
+              SELECT SUM( d.val_pre_docu ) 
+              FROM arfafe d
+              WHERE  EXISTS ( 
+                SELECT  1  
+                FROM ARLCRD  f
+                WHERE f.no_cia = d.no_cia
+                  AND f.tipo_docu = d.tipo_doc
+                  AND f.no_docu = d.no_factu
+                  AND f.cod_oper = a.cod_oper
+                  AND f.no_cia = a.no_cia  ) ) as  val_vta2,
+               a.monto_fina as  total_fn,
+               a.no_cuotas as plazo,
+               t.cuotas_pagadas as cuotas_pagadas,
+               t.cuotas_vencidas as cuotas_vencidas,
+               t.capital as saldo_capital,
+               t.total_financiar as deuda_por_vencer,
+               t.capital as deuda_vencida,
+               t.mon_gara_tot as val_gara_actual,
+               t.por_ratio_gar as ratio_actual,
+               t.dia_venc_max as mora_max,
+               t.dia_venc_pro as mora_prom
+            FROM arlcop a
+            INNER JOIN gen_persona gp  ON  a.no_cliente = gp.cod_perso
+            LEFT JOIN vve_cred_soli s  ON  a.no_cia = s.cod_empr   AND a.cod_oper = s.cod_oper_rel 
+            LEFT JOIN lxc_oper_ratio r ON  r.no_cia = a.no_cia  AND r.cod_oper = a.cod_oper AND r.nivel = 1
+            LEFT JOIN vve_cred_maes_gara u ON EXISTS ( SELECT 1 FROM lxc_oper_soli_gara g1 WHERE g1.no_cia = a.no_cia AND  ( g1.cod_oper = a.cod_oper or g1.cod_soli_cred = s.cod_soli_cred ) AND u.cod_garantia = g1.cod_gara )
+            INNER JOIN lxc_clie_movi_temp t ON t.no_cia = a.no_cia AND t.cod_oper = a.cod_oper
+            WHERE  a.estado = 'A'  
+              AND (  (p_tipo_docu IS NULL AND p_num_docu IS NULL )
+                    OR DECODE(p_tipo_docu,'002',gp.num_ruc,'001',gp.num_docu_iden) = p_num_docu )
+              AND ( p_cod_clie IS NULL
+                    OR a.No_Cliente = p_cod_clie )         
+              AND ( p_num_ope IS NULL
+                    OR a.cod_oper = p_num_ope )  
+              AND ( p_cod_soli_cred IS NULL
+                    OR s.cod_soli_cred = p_cod_soli_cred )
+              AND ( NVL(p_situ_ope, 'AMBOS') = 'AMBOS'
+                    OR t.estado = p_situ_ope )     
+              AND ( ( nvl(p_ratio, 6) = 6 AND  r.val_ratio IS NULL )
+              OR  ( p_ratio = 1 AND (r.val_ratio < 1)  )      
+              OR  ( p_ratio = 2 AND (r.val_ratio >= 1   AND r.val_ratio < 1.2 ) )
+              OR  ( p_ratio = 3 AND (r.val_ratio >= 1.2 AND r.val_ratio < 1.3 ) )
+              OR  ( p_ratio = 4 AND (r.val_ratio >= 1.3 AND r.val_ratio < 1.5 ) ) 
+              OR  ( p_ratio = 5 AND (r.val_ratio >= 1.5 )  ) )
+              AND ( p_cia IS NULL
+                    OR a.no_cia = p_cia )     
+              AND ( p_tipo_gara IS NULL
+                    OR u.ind_tipo_garantia = p_tipo_gara ) 
+              AND ( p_fec_mig_ini IS NULL 
+                    OR ( SELECT TRUNC( MAX(i.fec_usua_cre ) ) FROM  lxc_aud_imp_letras i WHERE  i.no_cia = a.no_cia AND i.cod_oper = a.cod_oper AND i.estado = a.estado AND substr(i.tipo_oper,1,11) = 'F-MIGRACION' ) >= p_fec_mig_ini )
+              AND ( p_fec_mig_fin IS NULL 
+                    OR ( SELECT TRUNC( MAX(i.fec_usua_cre ) ) FROM  lxc_aud_imp_letras i WHERE  i.no_cia = a.no_cia AND i.cod_oper = a.cod_oper AND i.estado = a.estado AND substr(i.tipo_oper,1,11) = 'F-MIGRACION' ) <= p_fec_mig_fin );
+         
+                       
+        p_ret_esta := 1;
+        p_ret_mens := 'La consulta se realizó de manera exitosa';
+    EXCEPTION
+        WHEN ve_error THEN
+            p_ret_esta := 0;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR',
+                                                'sp_search_soli_traza',
+                                                p_cod_usua_sid,
+                                                'Error en la consulta',
+                                                p_ret_mens,
+                                                NULL);
+        WHEN OTHERS THEN
+            p_ret_esta := -1;
+            p_ret_mens := 'sp_search_soli_traza:' || sqlerrm;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR',
+                                                'sp_search_soli_traza',
+                                                p_cod_usua_sid,
+                                                'Error en la consulta',
+                                                p_ret_mens,
+                                                NULL);
+    END sp_search_soli_traza;
+    
+    PROCEDURE sp_inse_clie_movi_temp (
+        p_cod_clie            IN                    lxc.lxc_clie_movi_temp.no_cliente%TYPE,
+        p_cia                 IN                    lxc.lxc_clie_movi_temp.no_cia%TYPE,
+        p_cod_oper            IN                    lxc.lxc_clie_movi_temp.cod_oper%TYPE,
+        p_modal_cred          IN                    lxc.lxc_clie_movi_temp.modal_cred%TYPE,
+        p_cod_moneda          IN                    lxc.lxc_clie_movi_temp.moneda%TYPE,
+        p_val_mon_fin         IN                    lxc.lxc_clie_movi_temp.total_financiar%TYPE,
+        p_num_cuotas          IN                    lxc.lxc_clie_movi_temp.no_cuotas%TYPE,
+        p_tea_sigv            IN                    lxc.lxc_clie_movi_temp.tea_sigv%TYPE,
+        p_capital             IN                    lxc.lxc_clie_movi_temp.capital%TYPE,
+        p_fec_ven_ult_let     IN                    VARCHAR2,
+        p_estado              IN                    lxc.lxc_clie_movi_temp.estado%TYPE,
+        p_fecha               IN                    VARCHAR2,
+        p_mon_gara_tot        IN                    lxc.lxc_clie_movi_temp.mon_gara_tot%TYPE,
+        p_porc_ratio_gar      IN                    lxc.lxc_clie_movi_temp.por_ratio_gar%TYPE,
+        p_int_oper            IN                    lxc.lxc_clie_movi_temp.interes_oper%TYPE,
+        p_tot_igv             IN                    lxc.lxc_clie_movi_temp.total_igv%TYPE,
+        p_tot_isc             IN                    lxc.lxc_clie_movi_temp.total_isc%TYPE,
+        p_tipo_cambio         IN                    lxc.lxc_clie_movi_temp.tipo_cambio%TYPE,
+        p_plazo               IN                    lxc.lxc_clie_movi_temp.plazo%TYPE,
+        p_dia_venc_max        IN                    lxc.lxc_clie_movi_temp.dia_venc_max%TYPE,
+        p_dia_venc_pro        IN                    lxc.lxc_clie_movi_temp.dia_venc_pro%TYPE,
+        p_cod_usua_sid        IN                    sistemas.usuarios.co_usuario%TYPE,
+        p_cod_usua_web        IN                    sistemas.sis_mae_usuario.cod_id_usuario%TYPE,
+        p_ret_esta            OUT                   NUMBER,
+        p_ret_mens            OUT                   VARCHAR2
+    ) AS
+
+        ve_error                  EXCEPTION;
+        v_sql_base                VARCHAR2(4000);
+        v_txt_msj                 VARCHAR2(200);
+        v_dia_venc_max            NUMBER;        
+        v_dia_venc_pro            NUMBER(5,2);
+        v_mon_gara_tot            lxc_clie_movi_temp.mon_gara_tot%TYPE;
+        v_plazo                   NUMBER;
+        v_porc_ratio_gar          lxc_clie_movi_temp.por_ratio_gar%TYPE;
+        v_nro_sec                 NUMBER;
+        v_monto_inicial           arlcml.monto_inicial%TYPE;  
+        v_ret_esta                NUMBER;
+        v_ret_mens                VARCHAR2(400);   
+        
+
+    BEGIN
+
+
+      BEGIN 
+        
+        IF p_estado = 'CERRADO' THEN
+          v_plazo        := 0;
+          v_mon_gara_tot := 0;
+          v_porc_ratio_gar := 0;
+        
+        END IF;  
+/*        BEGIN 
+          sp_calcula_clie_sap(p_cia, p_cod_oper, p_capital, v_nro_sec, v_monto_inicial , v_dia_venc_pro,v_dia_venc_max, v_mon_gara_tot, v_porc_ratio_gar,  v_ret_esta ,v_ret_mens );    
+          IF v_ret_esta > 0 THEN
+            NULL;
+          END IF;
+           
+        END;  */   
+        
+          
+        INSERT INTO lxc_clie_movi_temp (
+            no_cliente,
+            no_cia,
+            cod_oper,
+            modal_cred,
+            moneda,
+            total_financiar,
+            no_cuotas,
+            tea_sigv,
+            capital,
+            vcto_ult_let,
+            estado,
+            fecha,
+            mon_gara_tot,
+            por_ratio_gar,
+            interes_oper,
+            total_igv,
+            total_isc,
+            tipo_cambio,
+            plazo,
+            dia_venc_max,
+            dia_venc_pro     
+        ) VALUES (
+            p_cod_clie,
+            p_cia,
+            p_cod_oper,
+            p_modal_cred,
+            p_cod_moneda,
+            p_val_mon_fin,
+            p_num_cuotas,
+            p_tea_sigv,
+            p_capital,         
+            to_date(p_fec_ven_ult_let,'DD/MM/YYYY'),
+            p_estado,
+            to_date(p_fecha,'DD/MM/YYYY'),
+            v_mon_gara_tot,
+            v_porc_ratio_gar,
+            p_int_oper,
+            p_tot_igv,
+            p_tot_isc,
+            p_tipo_cambio,
+            p_plazo,
+            p_dia_venc_max,
+            p_dia_venc_pro        
+            );
+
+        EXCEPTION
+          WHEN ve_error THEN
+            v_txt_msj := 'Error al insertar registro';
+            p_ret_esta := -1;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_inse_clie_movi_temp', p_cod_usua_sid, v_txt_msj
+            , p_ret_mens);
+            ROLLBACK;
+        END;
+        
+        COMMIT;
+        
+        p_ret_esta := 1;
+        p_ret_mens := 'Se registró correctamente el movimiento ';
+
+    EXCEPTION
+        WHEN ve_error THEN
+            p_ret_esta := 0;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_inse_clie_movi_temp', p_cod_usua_sid, 'Error al insertar movimiento'
+            , p_ret_mens);
+            ROLLBACK;
+        WHEN OTHERS THEN
+            p_ret_esta := -1;
+            p_ret_mens := p_ret_mens||'sp_inse_clie_movi_temp:' || sqlerrm;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_inse_clie_movi_temp', p_cod_usua_sid, 'Error al insertar movimiento'
+            , p_ret_mens);
+            ROLLBACK;
+    END sp_inse_clie_movi_temp; 
+
+    PROCEDURE sp_del_clie_movi_temp (
+        p_cod_clie            IN                    lxc.lxc_clie_movi_temp.no_cliente%TYPE,
+        p_ret_esta            OUT                   NUMBER,
+        p_ret_mens            OUT                   VARCHAR2
+    ) AS
+
+      ve_error EXCEPTION;
+      v_sql_base             VARCHAR2(4000);
+      v_txt_msj              VARCHAR2(200);
+
+    BEGIN
+
+        BEGIN 
+          
+          DELETE FROM lxc_clie_movi_temp e
+          WHERE e.no_cliente = p_cod_clie;
+            --AND e.no_cia = p_cia;
+ 
+        EXCEPTION
+          WHEN ve_error THEN
+            v_txt_msj := 'Error al eliminar registro';
+            p_ret_esta := -1;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'lxc_clie_movi_temp', p_cod_clie, v_txt_msj
+            , p_ret_mens);
+            ROLLBACK;
+        END;
+        COMMIT;
+        
+        p_ret_esta := 1;
+        p_ret_mens := 'Se elimino correctamente el movimiento ';
+
+    EXCEPTION
+        WHEN ve_error THEN
+            p_ret_esta := 0;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_inse_clie_movi_temp', p_cod_clie, 'Error al insertar movimiento'
+            , p_ret_mens);
+            ROLLBACK;
+        WHEN OTHERS THEN
+            p_ret_esta := -1;
+            p_ret_mens := p_ret_mens||'sp_inse_clie_movi_temp:' || sqlerrm;
+            pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_inse_clie_movi_temp', p_cod_clie, 'Error al insertar movimiento'
+            , p_ret_mens);
+            ROLLBACK;
+    END sp_del_clie_movi_temp;
+    
+
+    PROCEDURE sp_calcula_clie_sap (
+      p_cia              IN    vve_cred_soli.cod_empr%TYPE,
+      p_num_ope          IN    arlcop.cod_oper%TYPE,  
+      p_saldo            IN    arlcml.saldo%TYPE, 
+      p_nro_sec          OUT   arlcml.nro_sec%TYPE,
+      p_monto_inicial    OUT   arlcml.monto_inicial%TYPE,
+      p_dias_prom        OUT   NUMBER,  
+      p_dias_max         OUT   NUMBER,  
+      p_mon_gara_tot     OUT   lxc.lxc_clie_movi_temp.mon_gara_tot%TYPE,
+      p_porc_ratio_ga    OUT   lxc.lxc_clie_movi_temp.por_ratio_gar%TYPE,           
+      p_ret_esta         OUT   NUMBER,
+      p_ret_mens         OUT   VARCHAR2
+      ) 
+      AS 
+        CURSOR c_letra (c_cod_oper  VARCHAR2, c_no_cia VARCHAR2 ) IS 
+          select ax.nro_sec,
+               ax.cuota,
+               ax.monto_inicial,
+               ax.amortizacion,
+               ax.f_vence,
+               ROUND(trunc(sysdate) - ax.f_vence, 0) dias
+          from arlcml ax
+          where ax.cod_oper = c_cod_oper
+           and no_cia = c_no_cia
+          ORDER BY ax.nro_sec DESC;
+         
+        v_saldo               NUMBER;
+        v_nro_sec             NUMBER;
+        v_monto_inicial       arlcml.monto_inicial%TYPE;
+        v_dias_prom           NUMBER;
+        v_dias_sum            NUMBER;
+        v_dias_count          NUMBER;
+        v_dias_max            NUMBER;  
+        v_mon_gara_tot        lxc.lxc_clie_movi_temp.mon_gara_tot%TYPE; 
+        v_porc_ratio_ga       lxc.lxc_clie_movi_temp.por_ratio_gar%TYPE; 
+         
+    BEGIN
+      --Calculamos
+      v_saldo            := p_saldo;
+      v_nro_sec          := 0;
+      v_monto_inicial    := 0;
+      v_dias_prom        := 0;
+      v_dias_sum         := 0;
+      v_dias_count       := 0;
+      v_dias_max         := 0; 
+      v_mon_gara_tot     := 0;  
+
+      FOR i IN c_letra (p_num_ope, p_cia)  LOOP 
+    
+        v_saldo := v_saldo - i.cuota;
+        IF i.dias > 0 THEN
+           --determino el maximo día
+           IF i.dias > v_dias_max THEN
+              v_dias_max := i.dias;
+           END IF; 
+           
+           --acumulamos prom
+           v_dias_count := v_dias_count +1;
+           v_dias_sum := v_dias_sum +i.dias ;
+           v_dias_prom := v_dias_sum/v_dias_count;
+           
+        END IF;
+        
+        IF v_saldo <= 0 THEN
+           v_nro_sec := i.nro_sec-1;
+           v_monto_inicial := i.monto_inicial; 
+           
+           EXIT;
+        
+        END IF; 
+  
+      END LOOP;
+      
+      
+      p_nro_sec          := v_nro_sec      ;
+      p_monto_inicial    := v_monto_inicial;
+      p_dias_prom        := v_dias_prom    ;
+      p_dias_max         := v_dias_max     ;
+      
+      --Calculamos el ratio de garantia.
+      BEGIN
+        SELECT nvl(o.val_gm_ajeno, 0)  + nvl(o.val_gm_propio, 0) + nvl(o.val_g_hipotecaria, 0)
+        INTO  v_mon_gara_tot
+        FROM  lxc_oper_ratio o
+        WHERE o.no_cia = p_cia
+          AND o.cod_oper = p_num_ope
+          AND o.anio_ratio = to_char(SYSDATE,'RRRR');
+      EXCEPTION
+        WHEN OTHERS THEN 
+          v_mon_gara_tot := 0;     
+      END;
+      
+      IF v_mon_gara_tot = 0 THEN
+        v_porc_ratio_ga  := 0; 
+      
+      ELSE
+        IF nvl(p_monto_inicial, 0) > 0 THEN
+        
+          p_porc_ratio_ga := p_mon_gara_tot/p_monto_inicial;
+
+        ELSE
+          p_mon_gara_tot   := 0;  
+          p_porc_ratio_ga  := 0; 
+          
+        END IF;  
+      END IF;
+      
+      p_mon_gara_tot := v_mon_gara_tot;
+      
+   
+  
+    EXCEPTION
+      WHEN OTHERS THEN
+          p_ret_esta := -1;
+          p_ret_mens := p_ret_mens||'sp_calcula_clie_sap:' || sqlerrm;
+          pkg_sweb_mae_gene.sp_regi_rlog_erro('AUDI_ERROR', 'sp_calcula_clie_sap', p_num_ope, 'Error al calcular datos actuales'
+          , p_ret_mens);
+          ROLLBACK;  
+    END sp_calcula_clie_sap;  
   
 END pkg_sweb_cred_soli_reportes;
